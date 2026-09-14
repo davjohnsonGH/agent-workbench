@@ -1,2 +1,1 @@
-# agent-workbench
-Workbenches for agents 
+Workplace for agents
