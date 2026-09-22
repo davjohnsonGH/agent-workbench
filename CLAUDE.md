@@ -57,13 +57,14 @@ npm-workspaces + Turborepo monorepo (`apps/*`, `packages/*`):
 
 - `apps/web` — Next.js 16 App Router app (React 19), the only application today. Code lives in `app/`.
 - `packages/ui` (`@repo/ui`) — shared React components. Exports source directly with no build step: `import X from "@repo/ui/<name>"` resolves to `packages/ui/src/<name>.tsx`. Currently empty.
+- `packages/artifacts` (`@repo/artifacts`) — Zod schemas for artifact content (`requirements`, `design_spec`) and `artifactRegistry`, the single source of truth for artifact types (`@repo/db` imports `artifactTypes` from here). The same schemas serve LLM structured output (`artifactJsonSchema`), validation (`parseArtifactContent`), and TS types, so keep constraints JSON-Schema friendly and put guidance for the model in `.describe()`. Bump an entry's `schemaVersion` on incompatible changes.
 - `packages/db` (`@repo/db`) — Drizzle schema, `createDb(url)` client, and committed SQL migrations (ADR-0002). Like `@repo/ui`, it exports TypeScript source (no build step). Enum-like columns are `text` with TS enums, not Postgres enums. Postgres truncates identifiers at 63 chars, so give long constraint names explicitly (see `artifactVersionInput`).
 - `packages/eslint-config` (`@repo/eslint-config`) — flat configs exported as `./base`, `./next-js`, `./react-internal`.
 - `packages/typescript-config` (`@repo/typescript-config`) — `base.json`, `nextjs.json`, `react-library.json`. Base is `strict` with `noUncheckedIndexedAccess`.
 
 Tooling notes:
 
-- Vitest runs from the **root** (no config file), not via turbo; tests live in the top-level `tests/` directory, not inside workspaces.
+- Vitest runs from the **root** (no config file), not via turbo; tests live in the top-level `tests/` directory, not inside workspaces. Reusable sample data lives in `tests/fixtures/`.
 - ESLint uses `eslint-plugin-only-warn`, turning every error into a warning — but lint scripts use `--max-warnings 0`, so any warning fails lint/CI.
 - `turbo/no-undeclared-env-vars` is enabled: env vars used in code must be declared in `turbo.json`.
 - Turbo `build` hashes `.env*` files as inputs and caches `.next/**` outputs.

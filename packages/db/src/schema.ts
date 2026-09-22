@@ -17,8 +17,8 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-export const artifactTypes = ["requirements", "design_spec"] as const;
-export type ArtifactType = (typeof artifactTypes)[number];
+// Artifact types are defined by the artifact schema registry.
+import { artifactTypes } from "@repo/artifacts";
 
 export const artifactVersionStatuses = [
   "draft",

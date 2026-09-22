@@ -92,6 +92,9 @@ create table approval_decision (
 - **Current version:** the highest `version` for an artifact. The
   **effective** version for downstream work is the latest one with status
   `approved`.
+- **Content validation:** `content` is validated with the artifact type's Zod
+  schema from `@repo/artifacts` before insert, and `schema_version` records
+  that schema's version.
 - **Revision flow:** rejecting version _n_ creates an agent run whose input
   includes version _n_ and the feedback. That run produces version _n+1_, and
   version _n_ keeps status `rejected`.
@@ -103,7 +106,5 @@ create table approval_decision (
 
 ## Open questions
 
-- Where artifact schemas live: probably Zod schemas in a shared package,
-  reused for LLM structured output, API validation, and UI typing.
 - Whether to store full prompts and completions in Postgres or only in the
   tracing backend.
