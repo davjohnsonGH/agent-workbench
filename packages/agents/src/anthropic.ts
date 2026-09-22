@@ -17,6 +17,11 @@ export interface AnthropicProviderOptions {
   /** Defaults to a client that resolves credentials from the environment. */
   client?: Anthropic;
   model?: string;
+  /**
+   * Workspace to bill, sent as `anthropic-workspace-id`. Required when the API
+   * key is not scoped to a workspace. Ignored when `client` is given.
+   */
+  workspaceId?: string;
 }
 
 export class AnthropicProvider implements ModelProvider {
@@ -24,7 +29,15 @@ export class AnthropicProvider implements ModelProvider {
   private readonly client: Anthropic;
 
   constructor(options: AnthropicProviderOptions = {}) {
-    this.client = options.client ?? new Anthropic();
+    this.client =
+      options.client ??
+      new Anthropic(
+        options.workspaceId
+          ? {
+              defaultHeaders: { "anthropic-workspace-id": options.workspaceId },
+            }
+          : {},
+      );
     this.model = options.model ?? DEFAULT_MODEL;
   }
 

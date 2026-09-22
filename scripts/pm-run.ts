@@ -5,7 +5,8 @@
  *   npm run agent:pm -- "A meal planner for busy families"
  *
  * Needs a migrated database and Anthropic credentials (ANTHROPIC_API_KEY) in
- * .env. Set AGENT_MODEL to override the default model.
+ * .env. Set AGENT_MODEL to override the default model, and
+ * ANTHROPIC_WORKSPACE_ID if the API key is not scoped to a workspace.
  */
 import { AnthropicProvider, executePmRun } from "@repo/agents";
 import { createDb, project } from "@repo/db";
@@ -27,7 +28,10 @@ if (!process.env.DATABASE_URL) {
 }
 
 const db = createDb(process.env.DATABASE_URL);
-const provider = new AnthropicProvider({ model: process.env.AGENT_MODEL });
+const provider = new AnthropicProvider({
+  model: process.env.AGENT_MODEL,
+  workspaceId: process.env.ANTHROPIC_WORKSPACE_ID,
+});
 
 try {
   const [proj] = await db
