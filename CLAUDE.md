@@ -38,6 +38,12 @@ npm run db:studio      # Drizzle Studio
 npm run db:down        # stop (add `-- -v` to also wipe data)
 ```
 
+Run the PM agent for real (needs `ANTHROPIC_API_KEY` in `.env` and a migrated DB; `AGENT_MODEL` overrides the default `claude-opus-5`):
+
+```sh
+npm run agent:pm -- "A meal planner for busy families"
+```
+
 To name a migration, run drizzle-kit directly: `cd packages/db && npx drizzle-kit generate --name <name>`.
 
 Single test file / single test:
@@ -58,13 +64,15 @@ npm-workspaces + Turborepo monorepo (`apps/*`, `packages/*`):
 - `apps/web` — Next.js 16 App Router app (React 19), the only application today. Code lives in `app/`.
 - `packages/ui` (`@repo/ui`) — shared React components. Exports source directly with no build step: `import X from "@repo/ui/<name>"` resolves to `packages/ui/src/<name>.tsx`. Currently empty.
 - `packages/artifacts` (`@repo/artifacts`) — Zod schemas for artifact content (`requirements`, `design_spec`) and `artifactRegistry`, the single source of truth for artifact types (`@repo/db` imports `artifactTypes` from here). The same schemas serve LLM structured output (`artifactJsonSchema`), validation (`parseArtifactContent`), and TS types, so keep constraints JSON-Schema friendly and put guidance for the model in `.describe()`. Bump an entry's `schemaVersion` on incompatible changes.
+- `packages/agents` (`@repo/agents`) — agent logic (ADR-0003). `ModelProvider` is the only model interface agents use; `AnthropicProvider` implements it with structured outputs, adaptive thinking, and `fallbacks: "default"`. `pm-agent.ts` holds the PM prompt; `pm-run.ts` (`executePmRun`) records an `agent_run`, calls the agent, and stores the output as a new `pending_approval` artifact version (linking revisions to the version they revise). Failed runs are recorded and the error rethrown.
 - `packages/db` (`@repo/db`) — Drizzle schema, `createDb(url)` client, and committed SQL migrations (ADR-0002). Like `@repo/ui`, it exports TypeScript source (no build step). Enum-like columns are `text` with TS enums, not Postgres enums. Postgres truncates identifiers at 63 chars, so give long constraint names explicitly (see `artifactVersionInput`).
 - `packages/eslint-config` (`@repo/eslint-config`) — flat configs exported as `./base`, `./next-js`, `./react-internal`.
 - `packages/typescript-config` (`@repo/typescript-config`) — `base.json`, `nextjs.json`, `react-library.json`. Base is `strict` with `noUncheckedIndexedAccess`.
 
 Tooling notes:
 
-- Vitest runs from the **root** (no config file), not via turbo; tests live in the top-level `tests/` directory, not inside workspaces. Reusable sample data lives in `tests/fixtures/`.
+- Vitest runs from the **root** (`vitest.config.ts`, which loads `.env`), not via turbo; tests live in the top-level `tests/` directory, not inside workspaces. `tests/fixtures/` holds sample artifacts and `FakeProvider` (canned model output, no API calls). `tests/integration/` needs a migrated Postgres and is skipped when `DATABASE_URL` is unset.
+- The root package is ESM (`"type": "module"`); `scripts/*.ts` run via `tsx`.
 - ESLint uses `eslint-plugin-only-warn`, turning every error into a warning — but lint scripts use `--max-warnings 0`, so any warning fails lint/CI.
 - `turbo/no-undeclared-env-vars` is enabled: env vars used in code must be declared in `turbo.json`.
 - Turbo `build` hashes `.env*` files as inputs and caches `.next/**` outputs.

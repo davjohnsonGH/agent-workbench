@@ -1,6 +1,7 @@
 {
   "name": "agent-workbench",
   "private": true,
+  "type": "module",
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
@@ -14,13 +15,15 @@
     "db:down": "docker compose -f infrastructure/docker/docker-compose.yml down",
     "db:generate": "npm run db:generate -w @repo/db",
     "db:migrate": "npm run db:migrate -w @repo/db",
-    "db:studio": "npm run db:studio -w @repo/db"
+    "db:studio": "npm run db:studio -w @repo/db",
+    "agent:pm": "tsx scripts/pm-run.ts"
   },
   "devDependencies": {
     "prettier": "3.9.6",
     "turbo": "^2.10.12",
     "typescript": "7.0.2",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.0",
+    "tsx": "4.23.15"
   },
   "engines": {
     "node": ">=24"
