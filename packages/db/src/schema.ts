@@ -7,6 +7,7 @@
  */
 import {
   foreignKey,
+  index,
   integer,
   jsonb,
   pgTable,
@@ -87,6 +88,36 @@ export const agentRun = pgTable("agent_run", {
   finishedAt: timestamp("finished_at", { withTimezone: true }),
   createdAt: createdAt(),
 });
+
+/**
+ * One call to a model within an agent run: the exact request, the response,
+ * and its cost. A run can make several calls (e.g. retries).
+ */
+export const modelCall = pgTable(
+  "model_call",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => agentRun.id, { onDelete: "cascade" }),
+    /** Model requested. */
+    model: text("model").notNull(),
+    /** Model that served the response (differs after a refusal fallback). */
+    servedModel: text("served_model"),
+    system: text("system").notNull(),
+    prompt: text("prompt").notNull(),
+    /** Parsed output, when the model returned one. */
+    output: jsonb("output"),
+    error: text("error"),
+    /** Provider request id, for support and log correlation. */
+    requestId: text("request_id"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    latencyMs: integer("latency_ms").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("model_call_run_id_idx").on(t.runId)],
+);
 
 /** Immutable snapshot of an artifact. Revisions create new rows. */
 export const artifactVersion = pgTable(

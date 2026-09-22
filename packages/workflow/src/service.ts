@@ -7,6 +7,7 @@ import {
   artifact,
   artifactVersion,
   type Db,
+  modelCall,
   project,
 } from "@repo/db";
 import { and, asc, desc, eq, gt, inArray, ne } from "drizzle-orm";
@@ -101,6 +102,28 @@ export async function getProjectDetail(db: Db, projectId: string) {
     })),
     runs,
   };
+}
+
+/** A run with its model calls (the trace) and the version it produced. */
+export async function getRunDetail(db: Db, projectId: string, runId: string) {
+  const [run] = await db
+    .select()
+    .from(agentRun)
+    .where(and(eq(agentRun.id, runId), eq(agentRun.projectId, projectId)));
+  if (!run) throw new WorkflowError("not_found", "Run not found");
+
+  const calls = await db
+    .select()
+    .from(modelCall)
+    .where(eq(modelCall.runId, runId))
+    .orderBy(asc(modelCall.createdAt));
+
+  const [version] = await db
+    .select({ id: artifactVersion.id, version: artifactVersion.version })
+    .from(artifactVersion)
+    .where(eq(artifactVersion.producedByRunId, runId));
+
+  return { run, calls, version: version ?? null };
 }
 
 /**

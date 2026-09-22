@@ -28,6 +28,8 @@ export interface StructuredResponse<T> {
   output: T;
   model: string;
   usage: ModelUsage;
+  /** Provider request id, when available. */
+  requestId?: string | null;
 }
 
 /** The model declined the request (after any fallbacks). */
@@ -35,6 +37,7 @@ export class ModelRefusalError extends Error {
   constructor(
     readonly category: string | null,
     readonly usage?: ModelUsage,
+    readonly requestId?: string | null,
   ) {
     super(`Model refused the request${category ? ` (${category})` : ""}`);
     this.name = "ModelRefusalError";
@@ -43,12 +46,15 @@ export class ModelRefusalError extends Error {
 
 /** The model responded, but the output was truncated or failed validation. */
 export class ModelOutputError extends Error {
+  readonly requestId?: string | null;
+
   constructor(
     message: string,
     readonly usage?: ModelUsage,
-    options?: ErrorOptions,
+    options?: ErrorOptions & { requestId?: string | null },
   ) {
     super(message, options);
+    this.requestId = options?.requestId;
     this.name = "ModelOutputError";
   }
 }

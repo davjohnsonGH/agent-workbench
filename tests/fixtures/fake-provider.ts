@@ -31,6 +31,7 @@ export class FakeProvider implements ModelProvider {
       output,
       model: this.model,
       usage: { inputTokens: 100, outputTokens: 200 },
+      requestId: "fake-request",
     };
   }
 }

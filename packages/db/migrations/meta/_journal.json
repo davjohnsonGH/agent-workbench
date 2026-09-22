@@ -15,6 +15,13 @@
       "when": 1790115521060,
       "tag": "0001_cascade_project_deletes",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790116315405,
+      "tag": "0002_model_call",
+      "breakpoints": true
     }
   ]
 }

@@ -72,19 +72,31 @@ export class AnthropicProvider implements ModelProvider {
       outputTokens: response.usage.output_tokens,
     };
 
+    const requestId = response._request_id;
+
     if (response.stop_reason === "refusal") {
       throw new ModelRefusalError(
         response.stop_details?.category ?? null,
         usage,
+        requestId,
       );
     }
     if (response.stop_reason === "max_tokens") {
-      throw new ModelOutputError("Model output was truncated", usage);
+      throw new ModelOutputError("Model output was truncated", usage, {
+        requestId,
+      });
     }
     if (response.parsed_output == null) {
-      throw new ModelOutputError("Model output did not match schema", usage);
+      throw new ModelOutputError("Model output did not match schema", usage, {
+        requestId,
+      });
     }
 
-    return { output: response.parsed_output, model: response.model, usage };
+    return {
+      output: response.parsed_output,
+      model: response.model,
+      usage,
+      requestId,
+    };
   }
 }

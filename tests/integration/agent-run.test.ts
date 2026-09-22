@@ -9,6 +9,7 @@ import {
   artifactVersionInput,
   createDb,
   type Db,
+  modelCall,
   project,
 } from "@repo/db";
 import { eq } from "drizzle-orm";
@@ -86,6 +87,24 @@ describe.skipIf(!url)("executeAgentRun", () => {
     });
     expect(provider.requests[0]?.prompt).toContain("Plan weekly dinners");
     expect(await lineageOf(version.id)).toEqual([]);
+
+    const calls = await db
+      .select()
+      .from(modelCall)
+      .where(eq(modelCall.runId, run.id));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      model: "fake-model",
+      servedModel: "fake-model",
+      prompt: provider.requests[0]?.prompt,
+      system: provider.requests[0]?.system,
+      output: sampleRequirements,
+      error: null,
+      requestId: "fake-request",
+      inputTokens: 100,
+      outputTokens: 200,
+    });
+    expect(calls[0]?.latencyMs).toBeGreaterThanOrEqual(0);
   });
 
   it("links a revision to the version it revises", async () => {
@@ -165,6 +184,16 @@ describe.skipIf(!url)("executeAgentRun", () => {
       error: "References unknown user stories: US-404",
       inputTokens: 100,
     });
+    // The trace keeps the rejected output for debugging.
+    const [call] = await db
+      .select()
+      .from(modelCall)
+      .where(eq(modelCall.runId, run!.id));
+    expect(call).toMatchObject({
+      error: "References unknown user stories: US-404",
+      requestId: "fake-request",
+    });
+    expect(call?.output).toMatchObject({ overview: sampleDesignSpec.overview });
   });
 
   it("records a failed run and rethrows when the model refuses", async () => {

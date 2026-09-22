@@ -13,15 +13,17 @@ import {
   artifactVersion,
   artifactVersionInput,
   type Db,
+  modelCall,
   project,
 } from "@repo/db";
 import { and, desc, eq } from "drizzle-orm";
 
-import { type AgentInputs, generateArtifact } from "./definition";
+import { type AgentInputs, buildAgentRequest } from "./definition";
 import {
   ModelOutputError,
   ModelRefusalError,
   type ModelProvider,
+  type StructuredResponse,
 } from "./model";
 import { agents } from "./registry";
 
@@ -92,37 +94,62 @@ export async function executeAgentRun(
     .returning();
   if (!run) throw new Error("Failed to create agent run");
 
-  let result;
+  const request = buildAgentRequest(agent, {
+    idea: proj.idea,
+    inputs,
+    revision:
+      params.revision && previous
+        ? { previous: previous.content, feedback: params.revision.feedback }
+        : undefined,
+  });
+  const call = {
+    runId: run.id,
+    model: provider.model,
+    system: request.system,
+    prompt: request.prompt,
+  };
+  const startedAt = Date.now();
+
+  let result: StructuredResponse<ArtifactContent[ArtifactType]> | undefined;
   try {
-    result = await generateArtifact(provider, agent, {
-      idea: proj.idea,
-      inputs,
-      revision:
-        params.revision && previous
-          ? { previous: previous.content, feedback: params.revision.feedback }
-          : undefined,
-    });
+    result = await provider.generateStructured(request);
     const problems = agent.check?.(result.output, inputs) ?? [];
     if (problems.length > 0) {
-      throw new ModelOutputError(problems.join("; "), result.usage);
+      throw new ModelOutputError(problems.join("; "), result.usage, {
+        requestId: result.requestId,
+      });
     }
   } catch (error) {
     const usage =
       error instanceof ModelRefusalError || error instanceof ModelOutputError
         ? error.usage
         : undefined;
-    await db
-      .update(agentRun)
-      .set({
-        status: "failed",
-        error: error instanceof Error ? error.message : String(error),
+    const message = error instanceof Error ? error.message : String(error);
+    await db.transaction(async (tx) => {
+      await tx.insert(modelCall).values({
+        ...call,
+        servedModel: result?.model,
+        output: result?.output,
+        error: message,
+        requestId: requestIdOf(error),
         inputTokens: usage?.inputTokens,
         outputTokens: usage?.outputTokens,
-        finishedAt: new Date(),
-      })
-      .where(eq(agentRun.id, run.id));
+        latencyMs: Date.now() - startedAt,
+      });
+      await tx
+        .update(agentRun)
+        .set({
+          status: "failed",
+          error: message,
+          inputTokens: usage?.inputTokens,
+          outputTokens: usage?.outputTokens,
+          finishedAt: new Date(),
+        })
+        .where(eq(agentRun.id, run.id));
+    });
     throw error;
   }
+  const latencyMs = Date.now() - startedAt;
 
   return db.transaction(async (tx) => {
     await tx
@@ -166,6 +193,16 @@ export async function executeAgentRun(
         })),
       );
     }
+
+    await tx.insert(modelCall).values({
+      ...call,
+      servedModel: result.model,
+      output: result.output,
+      requestId: result.requestId,
+      inputTokens: result.usage.inputTokens,
+      outputTokens: result.usage.outputTokens,
+      latencyMs,
+    });
 
     const [finished] = await tx
       .update(agentRun)
@@ -222,4 +259,15 @@ async function loadVersion(
     throw new Error(`Artifact version ${versionId} is not a valid ${type}`);
   }
   return { id: row.id, content: parsed.data };
+}
+
+/** Provider request id from a model error or an SDK API error, if any. */
+function requestIdOf(error: unknown): string | null {
+  if (error instanceof ModelRefusalError || error instanceof ModelOutputError) {
+    return error.requestId ?? null;
+  }
+  if (typeof error === "object" && error !== null && "requestID" in error) {
+    return (error as { requestID?: string | null }).requestID ?? null;
+  }
+  return null;
 }

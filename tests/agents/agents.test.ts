@@ -1,9 +1,8 @@
-import { designerAgent, generateArtifact, pmAgent } from "@repo/agents";
+import { buildAgentRequest, designerAgent, pmAgent } from "@repo/agents";
 import { designSpecSchema, requirementsSchema } from "@repo/artifacts";
 import { describe, expect, it } from "vitest";
 
 import { sampleDesignSpec, sampleRequirements } from "../fixtures/artifacts";
-import { sampleTeamProvider } from "../fixtures/fake-provider";
 
 describe("pmAgent", () => {
   it("prompts with the idea", () => {
@@ -65,22 +64,17 @@ describe("designerAgent", () => {
   });
 });
 
-describe("generateArtifact", () => {
-  it("requests output matching the agent's artifact schema", async () => {
-    const provider = sampleTeamProvider();
-    await generateArtifact(provider, pmAgent, { idea: "x", inputs: {} });
-    await generateArtifact(provider, designerAgent, {
+describe("buildAgentRequest", () => {
+  it("uses the agent's prompt and artifact schema", () => {
+    const pm = buildAgentRequest(pmAgent, { idea: "x", inputs: {} });
+    const designer = buildAgentRequest(designerAgent, {
       idea: "x",
       inputs: { requirements: sampleRequirements },
     });
 
-    expect(provider.requests.map((r) => r.schema)).toEqual([
-      requirementsSchema,
-      designSpecSchema,
-    ]);
-    expect(provider.requests.map((r) => r.system)).toEqual([
-      pmAgent.system,
-      designerAgent.system,
-    ]);
+    expect(pm.schema).toBe(requirementsSchema);
+    expect(pm.system).toBe(pmAgent.system);
+    expect(designer.schema).toBe(designSpecSchema);
+    expect(designer.prompt).toContain("<approved_requirements>");
   });
 });

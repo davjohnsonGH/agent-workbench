@@ -104,7 +104,7 @@ create table approval_decision (
 - **No users table in V1.** It is single-user, so approvals carry no actor.
   Add `user` and `decided_by` when multi-user support arrives.
 
-## Open questions
+## Later additions
 
-- Whether to store full prompts and completions in Postgres or only in the
-  tracing backend.
+- `model_call`: one row per model request in a run, with prompts, output, and
+  cost (ADR-0004).

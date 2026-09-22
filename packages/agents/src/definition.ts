@@ -5,7 +5,7 @@ import {
 } from "@repo/artifacts";
 import type { AgentRole } from "@repo/db";
 
-import type { ModelProvider, StructuredResponse } from "./model";
+import type { StructuredRequest } from "./model";
 
 /** Approved upstream artifacts an agent receives, keyed by type. */
 export type AgentInputs = Partial<ArtifactContent>;
@@ -36,16 +36,16 @@ export interface AgentDefinition<T extends ArtifactType = ArtifactType> {
   check?(output: ArtifactContent[T], inputs: AgentInputs): string[];
 }
 
-export function generateArtifact<T extends ArtifactType>(
-  provider: ModelProvider,
+/** The model request an agent makes for a given context. */
+export function buildAgentRequest<T extends ArtifactType>(
   agent: AgentDefinition<T>,
   context: AgentContext<T>,
-): Promise<StructuredResponse<ArtifactContent[T]>> {
-  return provider.generateStructured({
+): StructuredRequest<(typeof artifactRegistry)[T]["schema"]> {
+  return {
     system: agent.system,
     prompt: agent.buildPrompt(context),
     schema: artifactRegistry[agent.produces].schema,
-  }) as Promise<StructuredResponse<ArtifactContent[T]>>;
+  };
 }
 
 /** Prompt section for revising a rejected version with reviewer feedback. */

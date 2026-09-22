@@ -60,6 +60,23 @@ pre {
   font-size: 0.85em;
 }
 
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  max-height: 32rem;
+  overflow-y: auto;
+}
+
+summary {
+  cursor: pointer;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}
+
 .page {
   max-width: 960px;
   margin: 0 auto;

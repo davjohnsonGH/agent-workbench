@@ -78,7 +78,7 @@ export default async function ProjectPage({
         );
       })}
 
-      <RunsTable runs={runs} />
+      <RunsTable projectId={project.id} runs={runs} />
     </main>
   );
 }
@@ -155,7 +155,13 @@ function ArtifactContent({ version }: { version: Detail["versions"][number] }) {
   );
 }
 
-function RunsTable({ runs }: { runs: Detail["runs"] }) {
+function RunsTable({
+  projectId,
+  runs,
+}: {
+  projectId: string;
+  runs: Detail["runs"];
+}) {
   if (runs.length === 0) return null;
   return (
     <section className="card">
@@ -170,6 +176,7 @@ function RunsTable({ runs }: { runs: Detail["runs"] }) {
               <th>Model</th>
               <th>Tokens (in / out)</th>
               <th>Duration</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -188,6 +195,11 @@ function RunsTable({ runs }: { runs: Detail["runs"] }) {
                   {run.inputTokens ?? "—"} / {run.outputTokens ?? "—"}
                 </td>
                 <td>{formatDuration(run.startedAt, run.finishedAt)}</td>
+                <td>
+                  <Link href={`/projects/${projectId}/runs/${run.id}`}>
+                    Trace
+                  </Link>
+                </td>
               </tr>
             ))}
           </tbody>
