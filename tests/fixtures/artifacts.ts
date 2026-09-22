@@ -1,4 +1,4 @@
-import type { DesignSpec, Requirements } from "@repo/artifacts";
+import type { DesignSpec, Requirements, TaskList } from "@repo/artifacts";
 
 /** Valid sample artifacts, reusable across tests. */
 
@@ -62,6 +62,49 @@ export const sampleDesignSpec: DesignSpec = {
     {
       decision: "Use a drawer for recipe selection",
       rationale: "Keeps the week visible while choosing",
+    },
+  ],
+  openQuestions: [],
+};
+
+export const sampleTaskList: TaskList = {
+  overview: "Build the data model first, then the planner, then the list.",
+  tasks: [
+    {
+      id: "T-1",
+      title: "Recipe and plan data model",
+      description: "Store recipes and a weekly plan of day-to-recipe entries.",
+      userStoryIds: [],
+      screenIds: [],
+      dependsOn: [],
+      estimate: "S",
+      acceptanceCriteria: ["A plan stores one recipe per day"],
+    },
+    {
+      id: "T-2",
+      title: "Week planner screen",
+      description: "7-day grid with a recipe picker drawer.",
+      userStoryIds: ["US-1"],
+      screenIds: ["SCR-1"],
+      dependsOn: ["T-1"],
+      estimate: "M",
+      acceptanceCriteria: ["Can assign a recipe to each day"],
+    },
+    {
+      id: "T-3",
+      title: "Shopping list",
+      description: "Merge ingredients across the planned recipes.",
+      userStoryIds: ["US-2"],
+      screenIds: ["SCR-2"],
+      dependsOn: ["T-2"],
+      estimate: "M",
+      acceptanceCriteria: ["Duplicate ingredients are merged"],
+    },
+  ],
+  risks: [
+    {
+      risk: "Ingredient units vary between recipes",
+      mitigation: "Merge only identical units in V1",
     },
   ],
   openQuestions: [],

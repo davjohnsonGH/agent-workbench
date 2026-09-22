@@ -3,10 +3,14 @@ import type {
   StructuredRequest,
   StructuredResponse,
 } from "@repo/agents";
-import { designSpecSchema } from "@repo/artifacts";
+import { designSpecSchema, taskListSchema } from "@repo/artifacts";
 import type { z } from "zod";
 
-import { sampleDesignSpec, sampleRequirements } from "./artifacts";
+import {
+  sampleDesignSpec,
+  sampleRequirements,
+  sampleTaskList,
+} from "./artifacts";
 
 /**
  * A ModelProvider that returns canned output (validated against the request
@@ -37,10 +41,16 @@ export class FakeProvider implements ModelProvider {
 }
 
 /** Responds with the sample artifact matching each request's schema. */
-export function sampleTeamProvider(overrides: { designSpec?: unknown } = {}) {
-  return new FakeProvider((request) =>
-    request.schema === designSpecSchema
-      ? (overrides.designSpec ?? sampleDesignSpec)
-      : sampleRequirements,
-  );
+export function sampleTeamProvider(
+  overrides: { designSpec?: unknown; taskList?: unknown } = {},
+) {
+  return new FakeProvider((request) => {
+    if (request.schema === designSpecSchema) {
+      return overrides.designSpec ?? sampleDesignSpec;
+    }
+    if (request.schema === taskListSchema) {
+      return overrides.taskList ?? sampleTaskList;
+    }
+    return sampleRequirements;
+  });
 }

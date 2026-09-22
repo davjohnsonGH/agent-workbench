@@ -1,8 +1,21 @@
-import { buildAgentRequest, designerAgent, pmAgent } from "@repo/agents";
-import { designSpecSchema, requirementsSchema } from "@repo/artifacts";
+import {
+  buildAgentRequest,
+  designerAgent,
+  engineerAgent,
+  pmAgent,
+} from "@repo/agents";
+import {
+  designSpecSchema,
+  requirementsSchema,
+  taskListSchema,
+} from "@repo/artifacts";
 import { describe, expect, it } from "vitest";
 
-import { sampleDesignSpec, sampleRequirements } from "../fixtures/artifacts";
+import {
+  sampleDesignSpec,
+  sampleRequirements,
+  sampleTaskList,
+} from "../fixtures/artifacts";
 
 describe("pmAgent", () => {
   it("prompts with the idea", () => {
@@ -64,6 +77,42 @@ describe("designerAgent", () => {
   });
 });
 
+describe("engineerAgent", () => {
+  const inputs = {
+    requirements: sampleRequirements,
+    design_spec: sampleDesignSpec,
+  };
+
+  it("prompts with the approved requirements and design", () => {
+    const prompt = engineerAgent.buildPrompt({
+      idea: "A meal planner",
+      inputs,
+    });
+    expect(prompt).toContain("<approved_requirements>");
+    expect(prompt).toContain("<approved_design_spec>");
+    expect(prompt).toContain('"id": "SCR-2"');
+  });
+
+  it("checks the task list against both inputs", () => {
+    expect(engineerAgent.check!(sampleTaskList, inputs)).toEqual([]);
+    const bad = {
+      ...sampleTaskList,
+      tasks: [{ ...sampleTaskList.tasks[0]!, screenIds: ["SCR-404"] }],
+    };
+    expect(engineerAgent.check!(bad, inputs)).toEqual([
+      "References unknown screens: SCR-404",
+    ]);
+  });
+
+  it("reports missing inputs instead of crashing", () => {
+    expect(
+      engineerAgent.check!(sampleTaskList, {
+        requirements: sampleRequirements,
+      }),
+    ).toEqual(["Approved requirements and design spec are required"]);
+  });
+});
+
 describe("buildAgentRequest", () => {
   it("uses the agent's prompt and artifact schema", () => {
     const pm = buildAgentRequest(pmAgent, { idea: "x", inputs: {} });
@@ -76,5 +125,13 @@ describe("buildAgentRequest", () => {
     expect(pm.system).toBe(pmAgent.system);
     expect(designer.schema).toBe(designSpecSchema);
     expect(designer.prompt).toContain("<approved_requirements>");
+    const engineer = buildAgentRequest(engineerAgent, {
+      idea: "x",
+      inputs: {
+        requirements: sampleRequirements,
+        design_spec: sampleDesignSpec,
+      },
+    });
+    expect(engineer.schema).toBe(taskListSchema);
   });
 });

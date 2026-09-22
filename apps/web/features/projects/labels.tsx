@@ -6,11 +6,13 @@ type Tone = "success" | "warning" | "danger" | "info" | "muted";
 export const roleLabels: Record<AgentRole, string> = {
   pm: "Product Manager",
   designer: "Designer",
+  engineer: "Engineer",
 };
 
 export const artifactLabels: Record<ArtifactType, string> = {
   requirements: "Requirements",
   design_spec: "Design spec",
+  task_list: "Task list",
 };
 
 /** Labels and tones for step, version, and run statuses. */

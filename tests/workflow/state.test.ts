@@ -20,11 +20,15 @@ function state(snapshot: Partial<ProjectSnapshot>) {
 }
 
 describe("computeWorkflowState", () => {
-  it("starts with the PM ready and the designer blocked", () => {
+  it("starts with the PM ready and later steps blocked on their inputs", () => {
     const result = state({});
-    expect(result.steps.map((s) => s.state)).toEqual([
-      { status: "ready" },
-      { status: "blocked", waitingOn: ["requirements"] },
+    expect(result.steps.map((s) => [s.role, s.state])).toEqual([
+      ["pm", { status: "ready" }],
+      ["designer", { status: "blocked", waitingOn: ["requirements"] }],
+      [
+        "engineer",
+        { status: "blocked", waitingOn: ["requirements", "design_spec"] },
+      ],
     ]);
     expect(result.next).toEqual({ type: "run", role: "pm" });
   });
@@ -68,11 +72,22 @@ describe("computeWorkflowState", () => {
     expect(result.next).toEqual({ type: "run", role: "designer" });
   });
 
+  it("unblocks the engineer once the design is approved", () => {
+    const result = state({
+      artifacts: {
+        requirements: latest("approved"),
+        design_spec: latest("approved", { id: "d1" }),
+      },
+    });
+    expect(result.next).toEqual({ type: "run", role: "engineer" });
+  });
+
   it("is complete when every step is approved", () => {
     const result = state({
       artifacts: {
         requirements: latest("approved"),
         design_spec: latest("approved", { id: "d1" }),
+        task_list: latest("approved", { id: "t1" }),
       },
     });
     expect(result.next).toEqual({ type: "complete" });

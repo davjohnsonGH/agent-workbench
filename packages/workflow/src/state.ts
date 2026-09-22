@@ -12,7 +12,7 @@ export interface WorkflowStep {
   requires: readonly ArtifactType[];
 }
 
-const sequence: AgentRole[] = ["pm", "designer"];
+const sequence: AgentRole[] = ["pm", "designer", "engineer"];
 
 export const workflowSteps: WorkflowStep[] = sequence.map((role) => ({
   role,

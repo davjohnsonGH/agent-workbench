@@ -32,7 +32,7 @@ export const artifactVersionStatuses = [
 ] as const;
 export type ArtifactVersionStatus = (typeof artifactVersionStatuses)[number];
 
-export const agentRoles = ["pm", "designer"] as const;
+export const agentRoles = ["pm", "designer", "engineer"] as const;
 export type AgentRole = (typeof agentRoles)[number];
 
 export const agentRunStatuses = [

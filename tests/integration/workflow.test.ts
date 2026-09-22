@@ -39,7 +39,7 @@ describe.skipIf(!url)("workflow service", () => {
     return createProject(db, { name: "Meal planner", idea: "Plan dinners" });
   }
 
-  it("runs PM then designer to completion, looping on rejection", async () => {
+  it("runs PM, designer, and engineer to completion, looping on rejection", async () => {
     const proj = await newProject();
     const provider = sampleTeamProvider();
 
@@ -68,12 +68,21 @@ describe.skipIf(!url)("workflow service", () => {
     });
     expect(state.next).toEqual({ type: "run", role: "designer" });
 
-    // Designer drafts the spec from the approved requirements; approving it
-    // completes the workflow.
+    // Designer drafts the spec from the approved requirements.
     const design = await runNextStepNow(db, provider, proj.id, queue);
     expect(design.run.role).toBe("designer");
     expect(provider.requests[2]?.prompt).toContain("<approved_requirements>");
     await decideVersion(db, design.version.id, { decision: "approved" });
+    expect((await getWorkflowState(db, proj.id)).next).toEqual({
+      type: "run",
+      role: "engineer",
+    });
+
+    // Engineer plans tasks from both; approving them completes the workflow.
+    const tasks = await runNextStepNow(db, provider, proj.id, queue);
+    expect(tasks.run.role).toBe("engineer");
+    expect(provider.requests[3]?.prompt).toContain("<approved_design_spec>");
+    await decideVersion(db, tasks.version.id, { decision: "approved" });
     expect((await getWorkflowState(db, proj.id)).next).toEqual({
       type: "complete",
     });
@@ -83,11 +92,12 @@ describe.skipIf(!url)("workflow service", () => {
       ["design_spec", 1, "approved"],
       ["requirements", 2, "approved"],
       ["requirements", 1, "rejected"],
+      ["task_list", 1, "approved"],
     ]);
     expect(detail.versions[2]?.decisions[0]?.feedback).toBe(
       "Cut scope to dinners only",
     );
-    expect(detail.runs).toHaveLength(3);
+    expect(detail.runs).toHaveLength(4);
   });
 
   it("lists projects newest first", async () => {

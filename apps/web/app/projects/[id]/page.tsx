@@ -11,6 +11,7 @@ import {
 import { DesignSpecView } from "@/features/projects/design-spec-view";
 import { NextActionPanel } from "@/features/projects/next-action-panel";
 import { RequirementsView } from "@/features/projects/requirements-view";
+import { TaskListView } from "@/features/projects/task-list-view";
 import { getDb, parseId } from "@/lib/server";
 
 export const dynamic = "force-dynamic";
@@ -150,6 +151,11 @@ function ArtifactContent({ version }: { version: Detail["versions"][number] }) {
     case "design_spec": {
       const parsed = parseArtifactContent("design_spec", version.content);
       if (parsed.success) return <DesignSpecView doc={parsed.data} />;
+      break;
+    }
+    case "task_list": {
+      const parsed = parseArtifactContent("task_list", version.content);
+      if (parsed.success) return <TaskListView doc={parsed.data} />;
       break;
     }
   }
