@@ -17,7 +17,8 @@
     "db:migrate": "npm run db:migrate -w @repo/db",
     "db:studio": "npm run db:studio -w @repo/db",
     "agent:pm": "tsx scripts/pm-run.ts",
-    "worker": "npm run start -w worker"
+    "worker": "npm run start -w worker",
+    "eval:pm": "tsx evals/pm/run.ts"
   },
   "devDependencies": {
     "prettier": "3.9.6",
@@ -37,6 +38,7 @@
   },
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "evals"
   ]
 }

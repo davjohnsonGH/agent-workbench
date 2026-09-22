@@ -57,3 +57,8 @@ Thumbs.db
 # Local certificates / secrets
 *.pem
 *.key
+# Eval output: keep results.jsonl/errors.jsonl/_state.json, not bulk or derived files
+.claude/hillclimb/**/traces/
+.claude/hillclimb/**/report.html
+.claude/hillclimb/**/state.json
+.claude/hillclimb/**/trajectory/
