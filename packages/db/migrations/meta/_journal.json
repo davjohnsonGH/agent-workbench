@@ -8,6 +8,13 @@
       "when": 1790113212380,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790115521060,
+      "tag": "0001_cascade_project_deletes",
+      "breakpoints": true
     }
   ]
 }

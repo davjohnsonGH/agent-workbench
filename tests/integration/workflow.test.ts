@@ -1,9 +1,11 @@
-import { createDb, type Db } from "@repo/db";
+import { agentRun, createDb, type Db, project } from "@repo/db";
+import { eq } from "drizzle-orm";
 import {
   createProject,
   decideVersion,
   getProjectDetail,
   getWorkflowState,
+  listProjects,
   runNextStep,
   WorkflowError,
 } from "@repo/workflow";
@@ -73,6 +75,32 @@ describe.skipIf(!url)("workflow service", () => {
       "Cut scope to dinners only",
     );
     expect(detail.runs).toHaveLength(2);
+  });
+
+  it("lists projects newest first", async () => {
+    const older = await newProject();
+    const newer = await newProject();
+    const ids = (await listProjects(db)).map((p) => p.id);
+    expect(ids.indexOf(newer.id)).toBeLessThan(ids.indexOf(older.id));
+  });
+
+  it("deletes a project with runs and revisions", async () => {
+    const proj = await newProject();
+    const provider = new FakeProvider(() => sampleRequirements);
+    const first = await runNextStep(db, provider, proj.id);
+    await decideVersion(db, first.version.id, {
+      decision: "rejected",
+      feedback: "Revise",
+    });
+    await runNextStep(db, provider, proj.id);
+
+    await db.delete(project).where(eq(project.id, proj.id));
+
+    const runs = await db
+      .select()
+      .from(agentRun)
+      .where(eq(agentRun.projectId, proj.id));
+    expect(runs).toEqual([]);
   });
 
   it("requires feedback to reject", async () => {

@@ -101,7 +101,9 @@ export const artifactVersion = pgTable(
     /** Validated against the artifact type's schema before insert. */
     content: jsonb("content").notNull(),
     schemaVersion: integer("schema_version").notNull(),
-    producedByRunId: uuid("produced_by_run").references(() => agentRun.id),
+    producedByRunId: uuid("produced_by_run").references(() => agentRun.id, {
+      onDelete: "set null",
+    }),
     createdAt: createdAt(),
   },
   (t) => [unique().on(t.artifactId, t.version)],
@@ -130,7 +132,7 @@ export const artifactVersionInput = pgTable(
       name: "artifact_version_input_input_fk",
       columns: [t.inputVersionId],
       foreignColumns: [artifactVersion.id],
-    }),
+    }).onDelete("cascade"),
   ],
 );
 

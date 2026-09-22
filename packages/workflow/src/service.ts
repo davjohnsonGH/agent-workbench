@@ -40,6 +40,10 @@ export async function createProject(
   return row;
 }
 
+export function listProjects(db: Db) {
+  return db.select().from(project).orderBy(desc(project.createdAt));
+}
+
 export async function getWorkflowState(
   db: Db,
   projectId: string,
