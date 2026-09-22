@@ -9,7 +9,12 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,md}\"",
     "check-types": "turbo run check-types",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "db:up": "docker compose -f infrastructure/docker/docker-compose.yml up -d --wait",
+    "db:down": "docker compose -f infrastructure/docker/docker-compose.yml down",
+    "db:generate": "npm run db:generate -w @repo/db",
+    "db:migrate": "npm run db:migrate -w @repo/db",
+    "db:studio": "npm run db:studio -w @repo/db"
   },
   "devDependencies": {
     "prettier": "3.9.6",

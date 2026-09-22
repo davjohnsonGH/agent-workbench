@@ -1,0 +1,23 @@
+# Local development services. Start with `npm run db:up` from the repo root.
+name: agent-workbench
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: workbench
+      POSTGRES_PASSWORD: workbench
+      POSTGRES_DB: workbench
+    ports:
+      - "5432:5432"
+    volumes:
+      # Postgres 18+ images store data under /var/lib/postgresql.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workbench -d workbench"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+volumes:
+  postgres-data:

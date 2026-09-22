@@ -1,8 +1,10 @@
 # V1 Data Model (proposed)
 
 The persistence model for [ADR-0001](../architecture/decisions/0001-artifact-workflow-approval-model.md).
-It targets PostgreSQL. The ORM and migration tool are not yet decided, so the
-schema is written as plain SQL.
+It targets PostgreSQL. The implementation is `packages/db/src/schema.ts`
+(Drizzle, see [ADR-0002](../architecture/decisions/0002-postgres-and-drizzle.md));
+the SQL below is the conceptual reference, and the generated migrations in
+`packages/db/migrations/` are authoritative.
 
 ## Entities
 
@@ -101,7 +103,6 @@ create table approval_decision (
 
 ## Open questions
 
-- Which ORM or migration tool to use (e.g. Drizzle, Prisma, Kysely)?
 - Where artifact schemas live: probably Zod schemas in a shared package,
   reused for LLM structured output, API validation, and UI typing.
 - Whether to store full prompts and completions in Postgres or only in the

@@ -10,6 +10,24 @@ jobs:
   quality:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: workbench
+          POSTGRES_PASSWORD: workbench
+          POSTGRES_DB: workbench
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U workbench -d workbench"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+
+    env:
+      DATABASE_URL: postgres://workbench:workbench@localhost:5432/workbench
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -31,6 +49,9 @@ jobs:
 
       - name: Type check
         run: npm run check-types
+
+      - name: Apply database migrations
+        run: npm run db:migrate
 
       - name: Test
         run: npm run test:run

@@ -8,7 +8,7 @@ Agent Workbench is a human-supervised AI software team: the user submits a produ
 
 Core design (ADR-0001, data model in `docs/system-design/data-model.md`): agents communicate only via typed, versioned **artifacts**; a deterministic **workflow** decides which agent runs next; **approval decisions** gate progression. Prefer adding infrastructure (queues, workers, distributed pieces) only when a concrete problem demands it, and document why.
 
-It is in early development: currently a frontend-only Next.js app, planned to grow (per `docs/roadmap/README.md`) through frontend platform → full-stack → distributed system → AI application → multi-agent system → production AI platform. Many directories (`infrastructure/`, `labs/`, `scripts/`, `docs/*`, `tests/*` subfolders, `apps/web/{components,features,hooks,lib,types}`) are placeholder scaffolding containing only `.gitkeep`.
+It is in early development: currently a Next.js app plus the `@repo/db` persistence layer, planned to grow (per `docs/roadmap/README.md`) through frontend platform → full-stack → distributed system → AI application → multi-agent system → production AI platform. Many directories (`infrastructure/`, `labs/`, `scripts/`, `docs/*`, `tests/*` subfolders, `apps/web/{components,features,hooks,lib,types}`) are placeholder scaffolding containing only `.gitkeep`.
 
 Requires Node.js 24+ and npm 11.x (enforced via `engines` / `devEngines` in the root `package.json`).
 
@@ -28,6 +28,18 @@ npm test               # vitest in watch mode
 npm run test:run       # vitest single run
 ```
 
+Database (Postgres 18 in Docker; copy `.env.example` to `.env` first):
+
+```sh
+npm run db:up          # start Postgres (waits until healthy)
+npm run db:migrate     # apply migrations in packages/db/migrations
+npm run db:generate    # generate a migration after editing packages/db/src/schema.ts
+npm run db:studio      # Drizzle Studio
+npm run db:down        # stop (add `-- -v` to also wipe data)
+```
+
+To name a migration, run drizzle-kit directly: `cd packages/db && npx drizzle-kit generate --name <name>`.
+
 Single test file / single test:
 
 ```sh
@@ -37,7 +49,7 @@ npx vitest run -t "runs Vitest successfully"
 
 Scope a turbo task to one workspace: `npx turbo run lint --filter=web`.
 
-CI (`.github/workflows/ci.yml`) runs, in order: `format:check`, `lint`, `check-types`, `test:run`, `build`. Run the same sequence locally before considering a change done.
+CI (`.github/workflows/ci.yml`) runs, in order: `format:check`, `lint`, `check-types`, `db:migrate` (against a Postgres service container), `test:run`, `build`. Run the same sequence locally before considering a change done.
 
 ## Architecture
 
@@ -45,6 +57,7 @@ npm-workspaces + Turborepo monorepo (`apps/*`, `packages/*`):
 
 - `apps/web` — Next.js 16 App Router app (React 19), the only application today. Code lives in `app/`.
 - `packages/ui` (`@repo/ui`) — shared React components. Exports source directly with no build step: `import X from "@repo/ui/<name>"` resolves to `packages/ui/src/<name>.tsx`. Currently empty.
+- `packages/db` (`@repo/db`) — Drizzle schema, `createDb(url)` client, and committed SQL migrations (ADR-0002). Like `@repo/ui`, it exports TypeScript source (no build step). Enum-like columns are `text` with TS enums, not Postgres enums. Postgres truncates identifiers at 63 chars, so give long constraint names explicitly (see `artifactVersionInput`).
 - `packages/eslint-config` (`@repo/eslint-config`) — flat configs exported as `./base`, `./next-js`, `./react-internal`.
 - `packages/typescript-config` (`@repo/typescript-config`) — `base.json`, `nextjs.json`, `react-library.json`. Base is `strict` with `noUncheckedIndexedAccess`.
 
@@ -54,3 +67,4 @@ Tooling notes:
 - ESLint uses `eslint-plugin-only-warn`, turning every error into a warning — but lint scripts use `--max-warnings 0`, so any warning fails lint/CI.
 - `turbo/no-undeclared-env-vars` is enabled: env vars used in code must be declared in `turbo.json`.
 - Turbo `build` hashes `.env*` files as inputs and caches `.next/**` outputs.
+- TypeScript 7 does not auto-include `@types/*`; a package that needs Node globals must set `"types": ["node"]` in its tsconfig.
