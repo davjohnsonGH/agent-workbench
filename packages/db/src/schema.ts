@@ -5,6 +5,7 @@
  * Status-like columns are Postgres `text` with a TypeScript-level enum rather
  * than native Postgres enums, which are awkward to evolve.
  */
+import { sql } from "drizzle-orm";
 import {
   foreignKey,
   index,
@@ -15,6 +16,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -69,25 +71,35 @@ export const artifact = pgTable(
   (t) => [unique().on(t.projectId, t.type)],
 );
 
-export const agentRun = pgTable("agent_run", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  projectId: uuid("project_id")
-    .notNull()
-    .references(() => project.id, { onDelete: "cascade" }),
-  role: text("role", { enum: agentRoles }).notNull(),
-  status: text("status", { enum: agentRunStatuses }).notNull(),
-  /** Input artifact version ids, reviewer feedback, etc. */
-  input: jsonb("input").notNull(),
-  model: text("model"),
-  inputTokens: integer("input_tokens"),
-  outputTokens: integer("output_tokens"),
-  error: text("error"),
-  traceId: text("trace_id"),
-  idempotencyKey: text("idempotency_key").unique(),
-  startedAt: timestamp("started_at", { withTimezone: true }),
-  finishedAt: timestamp("finished_at", { withTimezone: true }),
-  createdAt: createdAt(),
-});
+export const agentRun = pgTable(
+  "agent_run",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => project.id, { onDelete: "cascade" }),
+    role: text("role", { enum: agentRoles }).notNull(),
+    status: text("status", { enum: agentRunStatuses }).notNull(),
+    /** Input artifact version ids, reviewer feedback, etc. */
+    input: jsonb("input").notNull(),
+    model: text("model"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    error: text("error"),
+    traceId: text("trace_id"),
+    idempotencyKey: text("idempotency_key").unique(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  // At most one queued or running run per project and role: the database,
+  // not application checks, prevents duplicate concurrent runs.
+  (t) => [
+    uniqueIndex("agent_run_one_active_per_role")
+      .on(t.projectId, t.role)
+      .where(sql`${t.status} in ('queued', 'running')`),
+  ],
+);
 
 /**
  * One call to a model within an agent run: the exact request, the response,
@@ -179,3 +191,40 @@ export const approvalDecision = pgTable("approval_decision", {
     .notNull()
     .defaultNow(),
 });
+
+export const jobStatuses = [
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+] as const;
+export type JobStatus = (typeof jobStatuses)[number];
+
+/**
+ * Background job queue (ADR-0005). Workers claim jobs with
+ * `FOR UPDATE SKIP LOCKED` and hold a lease (`locked_until`) that they renew
+ * while working; a job whose lease expires is reclaimed by another worker.
+ */
+export const job = pgTable(
+  "job",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    queue: text("queue").notNull().default("default"),
+    type: text("type").notNull(),
+    payload: jsonb("payload").notNull(),
+    status: text("status", { enum: jobStatuses }).notNull().default("queued"),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(3),
+    /** Earliest time the job may be claimed (used for retry backoff). */
+    runAt: timestamp("run_at", { withTimezone: true }).notNull().defaultNow(),
+    lockedBy: text("locked_by"),
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
+    lastError: text("last_error"),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [index("job_claim_idx").on(t.queue, t.status, t.runAt)],
+);

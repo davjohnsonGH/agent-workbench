@@ -1,8 +1,4 @@
-import {
-  executeAgentRun,
-  ModelOutputError,
-  ModelRefusalError,
-} from "@repo/agents";
+import { runAgent, ModelOutputError, ModelRefusalError } from "@repo/agents";
 import {
   agentRun,
   artifactVersion,
@@ -21,7 +17,7 @@ import { FakeProvider, sampleTeamProvider } from "../fixtures/fake-provider";
 // Requires Postgres; tests use an isolated database (see vitest.config.ts).
 const url = process.env.DATABASE_URL;
 
-describe.skipIf(!url)("executeAgentRun", () => {
+describe.skipIf(!url)("runAgent", () => {
   let db: Db;
 
   beforeAll(() => {
@@ -51,7 +47,7 @@ describe.skipIf(!url)("executeAgentRun", () => {
   /** A project whose requirements v1 is approved. */
   async function projectWithApprovedRequirements() {
     const proj = await createProject();
-    const { version } = await executeAgentRun(db, sampleTeamProvider(), {
+    const { version } = await runAgent(db, sampleTeamProvider(), {
       projectId: proj.id,
       role: "pm",
     });
@@ -66,7 +62,7 @@ describe.skipIf(!url)("executeAgentRun", () => {
     const proj = await createProject();
     const provider = new FakeProvider(() => sampleRequirements);
 
-    const { run, version } = await executeAgentRun(db, provider, {
+    const { run, version } = await runAgent(db, provider, {
       projectId: proj.id,
       role: "pm",
     });
@@ -110,12 +106,12 @@ describe.skipIf(!url)("executeAgentRun", () => {
   it("links a revision to the version it revises", async () => {
     const proj = await createProject();
     const provider = new FakeProvider(() => sampleRequirements);
-    const first = await executeAgentRun(db, provider, {
+    const first = await runAgent(db, provider, {
       projectId: proj.id,
       role: "pm",
     });
 
-    const second = await executeAgentRun(db, provider, {
+    const second = await runAgent(db, provider, {
       projectId: proj.id,
       role: "pm",
       revision: { versionId: first.version.id, feedback: "Add lunches" },
@@ -131,7 +127,7 @@ describe.skipIf(!url)("executeAgentRun", () => {
     const { proj, requirements } = await projectWithApprovedRequirements();
     const provider = sampleTeamProvider();
 
-    const { run, version } = await executeAgentRun(db, provider, {
+    const { run, version } = await runAgent(db, provider, {
       projectId: proj.id,
       role: "designer",
     });
@@ -150,7 +146,7 @@ describe.skipIf(!url)("executeAgentRun", () => {
   it("fails the designer run without approved requirements", async () => {
     const proj = await createProject();
     await expect(
-      executeAgentRun(db, sampleTeamProvider(), {
+      runAgent(db, sampleTeamProvider(), {
         projectId: proj.id,
         role: "designer",
       }),
@@ -169,7 +165,7 @@ describe.skipIf(!url)("executeAgentRun", () => {
     });
 
     await expect(
-      executeAgentRun(db, provider, { projectId: proj.id, role: "designer" }),
+      runAgent(db, provider, { projectId: proj.id, role: "designer" }),
     ).rejects.toBeInstanceOf(ModelOutputError);
 
     const [run] = await db
@@ -206,7 +202,7 @@ describe.skipIf(!url)("executeAgentRun", () => {
     });
 
     await expect(
-      executeAgentRun(db, provider, { projectId: proj.id, role: "pm" }),
+      runAgent(db, provider, { projectId: proj.id, role: "pm" }),
     ).rejects.toBeInstanceOf(ModelRefusalError);
 
     const runs = await db

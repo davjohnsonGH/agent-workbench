@@ -23,8 +23,8 @@ export const workflowSteps: WorkflowStep[] = sequence.map((role) => ({
 /** What the state computation needs to know about a project. */
 export interface ProjectSnapshot {
   artifacts: Partial<Record<ArtifactType, ArtifactSnapshot>>;
-  /** Roles with a run currently in progress. */
-  activeRoles: AgentRole[];
+  /** Runs that are queued or in progress (at most one per role). */
+  activeRuns: { role: AgentRole; status: "queued" | "running" }[];
 }
 
 export interface ArtifactSnapshot {
@@ -41,6 +41,7 @@ export interface ArtifactSnapshot {
 export type StepState =
   | { status: "blocked"; waitingOn: ArtifactType[] }
   | { status: "ready" }
+  | { status: "queued" }
   | { status: "running" }
   | { status: "awaiting_approval"; versionId: string }
   | { status: "needs_revision"; versionId: string; feedback: string }
@@ -77,7 +78,8 @@ function computeStepState(
     (type) => !snapshot.artifacts[type]?.hasApproved,
   );
   if (waitingOn.length > 0) return { status: "blocked", waitingOn };
-  if (snapshot.activeRoles.includes(step.role)) return { status: "running" };
+  const active = snapshot.activeRuns.find((r) => r.role === step.role);
+  if (active) return { status: active.status };
 
   const latest = snapshot.artifacts[step.produces]?.latest;
   if (!latest) return { status: "ready" };
@@ -118,6 +120,7 @@ function computeNextAction(steps: WorkflowState["steps"]): NextAction {
         };
       case "awaiting_approval":
         return { type: "review", versionId: step.state.versionId };
+      case "queued":
       case "running":
       case "blocked":
         return { type: "wait" };

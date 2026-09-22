@@ -21,7 +21,7 @@ export default async function RunPage({
     if (error instanceof WorkflowError) notFound();
     throw error;
   }
-  const { run, calls, version } = detail;
+  const { run, calls, version, job } = detail;
 
   return (
     <main className="page">
@@ -43,6 +43,48 @@ export default async function RunPage({
         </div>
         {run.error && <p className="error">{run.error}</p>}
       </header>
+
+      {job && (
+        <section className="card">
+          <h2>Queue job</h2>
+          <table>
+            <tbody>
+              <tr>
+                <th>Status</th>
+                <td>
+                  <StatusBadge status={job.status} />
+                </td>
+              </tr>
+              <tr>
+                <th>Attempts</th>
+                <td>
+                  {job.attempts} of {job.maxAttempts}
+                </td>
+              </tr>
+              {job.status === "queued" && job.attempts > 0 && (
+                <tr>
+                  <th>Next attempt</th>
+                  <td>{job.runAt.toLocaleString()}</td>
+                </tr>
+              )}
+              {job.lockedBy && (
+                <tr>
+                  <th>Worker</th>
+                  <td>
+                    <code>{job.lockedBy}</code>
+                  </td>
+                </tr>
+              )}
+              {job.lastError && (
+                <tr>
+                  <th>Last error</th>
+                  <td className="error">{job.lastError}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </section>
+      )}
 
       <section className="card">
         <h2>Run input</h2>

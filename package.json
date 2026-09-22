@@ -16,7 +16,8 @@
     "db:generate": "npm run db:generate -w @repo/db",
     "db:migrate": "npm run db:migrate -w @repo/db",
     "db:studio": "npm run db:studio -w @repo/db",
-    "agent:pm": "tsx scripts/pm-run.ts"
+    "agent:pm": "tsx scripts/pm-run.ts",
+    "worker": "npm run start -w worker"
   },
   "devDependencies": {
     "prettier": "3.9.6",

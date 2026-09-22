@@ -16,7 +16,7 @@ function latest(
 }
 
 function state(snapshot: Partial<ProjectSnapshot>) {
-  return computeWorkflowState({ artifacts: {}, activeRoles: [], ...snapshot });
+  return computeWorkflowState({ artifacts: {}, activeRuns: [], ...snapshot });
 }
 
 describe("computeWorkflowState", () => {
@@ -29,10 +29,12 @@ describe("computeWorkflowState", () => {
     expect(result.next).toEqual({ type: "run", role: "pm" });
   });
 
-  it("waits while the PM is running", () => {
-    const result = state({ activeRoles: ["pm"] });
-    expect(result.steps[0]?.state).toEqual({ status: "running" });
-    expect(result.next).toEqual({ type: "wait" });
+  it("waits while the PM is queued or running", () => {
+    for (const status of ["queued", "running"] as const) {
+      const result = state({ activeRuns: [{ role: "pm", status }] });
+      expect(result.steps[0]?.state).toEqual({ status });
+      expect(result.next).toEqual({ type: "wait" });
+    }
   });
 
   it("asks for review when requirements await approval", () => {

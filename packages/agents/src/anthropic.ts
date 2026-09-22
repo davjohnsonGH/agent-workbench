@@ -100,3 +100,18 @@ export class AnthropicProvider implements ModelProvider {
     };
   }
 }
+
+/**
+ * Whether a failed model call is worth retrying: transient API failures
+ * (timeouts, rate limits, overload, 5xx, connection errors) and bad output,
+ * which a fresh sample may fix. Refusals and other client errors are not.
+ */
+export function isRetryableModelError(error: unknown): boolean {
+  if (error instanceof ModelOutputError) return true;
+  if (error instanceof Anthropic.APIConnectionError) return true;
+  if (error instanceof Anthropic.APIError) {
+    const status = error.status ?? 0;
+    return status === 408 || status === 409 || status === 429 || status >= 500;
+  }
+  return false;
+}

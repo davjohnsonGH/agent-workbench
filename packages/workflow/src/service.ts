@@ -1,16 +1,25 @@
-import { executeAgentRun, type ModelProvider } from "@repo/agents";
+import {
+  createAgentRun,
+  executeAgentRun,
+  failAgentRun,
+  isRetryableModelError,
+  type ModelProvider,
+  requeueAgentRun,
+} from "@repo/agents";
 import type { ArtifactType } from "@repo/artifacts";
 import {
-  type AgentRole,
   agentRun,
   approvalDecision,
   artifact,
   artifactVersion,
   type Db,
+  job,
   modelCall,
   project,
 } from "@repo/db";
-import { and, asc, desc, eq, gt, inArray, ne } from "drizzle-orm";
+import { enqueue, type JobHandler, type JobRow } from "@repo/queue";
+import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { z } from "zod";
 
 import {
   type ArtifactSnapshot,
@@ -19,8 +28,9 @@ import {
   type WorkflowState,
 } from "./state";
 
-/** Runs stuck in `running` longer than this (e.g. after a crash) stop blocking the step. */
-const STALE_RUN_MS = 10 * 60 * 1000;
+/** Queue that agent-run jobs go to; the worker processes it. */
+export const AGENT_QUEUE = "agents";
+const AGENT_RUN_JOB = "agent_run";
 
 export class WorkflowError extends Error {
   constructor(
@@ -104,7 +114,7 @@ export async function getProjectDetail(db: Db, projectId: string) {
   };
 }
 
-/** A run with its model calls (the trace) and the version it produced. */
+/** A run with its model calls (the trace), queue job, and the version it produced. */
 export async function getRunDetail(db: Db, projectId: string, runId: string) {
   const [run] = await db
     .select()
@@ -123,7 +133,14 @@ export async function getRunDetail(db: Db, projectId: string, runId: string) {
     .from(artifactVersion)
     .where(eq(artifactVersion.producedByRunId, runId));
 
-  return { run, calls, version: version ?? null };
+  const [runJob] = await db
+    .select()
+    .from(job)
+    .where(sql`${job.payload}->>'runId' = ${runId}`)
+    .orderBy(desc(job.createdAt))
+    .limit(1);
+
+  return { run, calls, version: version ?? null, job: runJob ?? null };
 }
 
 /**
@@ -193,14 +210,18 @@ export async function decideVersion(
   });
 }
 
-/** Run the agent for the workflow's next step, if the next step is a run. */
-export async function runNextStep(
+/**
+ * Queue the agent for the workflow's next step, if the next step is a run.
+ * The run and its job are created in one transaction; the worker executes it.
+ * A second request while the role has an active run is rejected by the
+ * database (`agent_run_one_active_per_role`), not just by the state check.
+ */
+export async function enqueueNextStep(
   db: Db,
-  provider: ModelProvider,
   projectId: string,
+  options: { queue?: string } = {},
 ) {
-  const state = await getWorkflowState(db, projectId);
-  const next = state.next;
+  const { next } = await getWorkflowState(db, projectId);
   if (next.type !== "run") {
     throw new WorkflowError(
       "conflict",
@@ -208,11 +229,56 @@ export async function runNextStep(
     );
   }
 
-  return executeAgentRun(db, provider, {
-    projectId,
-    role: next.role,
-    revision: next.revision,
-  });
+  try {
+    return await db.transaction(async (tx) => {
+      const run = await createAgentRun(tx, {
+        projectId,
+        role: next.role,
+        revision: next.revision,
+      });
+      await enqueue(tx, {
+        queue: options.queue ?? AGENT_QUEUE,
+        type: AGENT_RUN_JOB,
+        payload: { runId: run.id },
+      });
+      return run;
+    });
+  } catch (error) {
+    if (isUniqueViolation(error, "agent_run_one_active_per_role")) {
+      throw new WorkflowError("conflict", "This agent is already running");
+    }
+    throw error;
+  }
+}
+
+/** Job handlers the worker registers for the agent queue. */
+export function agentJobHandlers(
+  db: Db,
+  provider: ModelProvider,
+): Record<string, JobHandler> {
+  const runIdOf = (job: JobRow) =>
+    z.object({ runId: z.string() }).parse(job.payload).runId;
+  return {
+    [AGENT_RUN_JOB]: {
+      async run(job) {
+        await executeAgentRun(db, provider, runIdOf(job));
+      },
+      isRetryable: isRetryableModelError,
+      onRetry: (job, error) => requeueAgentRun(db, runIdOf(job), error),
+      onFailed: (job, error) => failAgentRun(db, runIdOf(job), error),
+    },
+  };
+}
+
+function isUniqueViolation(error: unknown, constraint: string): boolean {
+  // Drizzle wraps driver errors; the Postgres error is the cause.
+  const pgError = (error as { cause?: unknown })?.cause ?? error;
+  return (
+    typeof pgError === "object" &&
+    pgError !== null &&
+    (pgError as { code?: string }).code === "23505" &&
+    (pgError as { constraint_name?: string }).constraint_name === constraint
+  );
 }
 
 async function loadSnapshot(
@@ -273,18 +339,21 @@ async function loadSnapshot(
   }
 
   const active = await db
-    .selectDistinct({ role: agentRun.role })
+    .select({ role: agentRun.role, status: agentRun.status })
     .from(agentRun)
     .where(
       and(
         eq(agentRun.projectId, projectId),
-        eq(agentRun.status, "running"),
-        gt(agentRun.startedAt, new Date(Date.now() - STALE_RUN_MS)),
+        inArray(agentRun.status, ["queued", "running"]),
       ),
     );
 
   return {
     artifacts,
-    activeRoles: active.map((r): AgentRole => r.role),
+    activeRuns: active.map((r) => ({
+      role: r.role,
+      status:
+        r.status === "queued" ? ("queued" as const) : ("running" as const),
+    })),
   };
 }

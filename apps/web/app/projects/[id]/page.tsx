@@ -60,7 +60,11 @@ export default async function ProjectPage({
         ))}
       </section>
 
-      <NextActionPanel projectId={project.id} next={workflow.next} />
+      <NextActionPanel
+        projectId={project.id}
+        next={workflow.next}
+        activeRun={activeRunOf(workflow.steps)}
+      />
 
       {artifactTypes.map((type) => {
         const typeVersions = versions.filter((v) => v.type === type);
@@ -207,6 +211,15 @@ function RunsTable({
       </div>
     </section>
   );
+}
+
+function activeRunOf(steps: Detail["workflow"]["steps"]) {
+  for (const step of steps) {
+    if (step.state.status === "queued" || step.state.status === "running") {
+      return { role: step.role, status: step.state.status };
+    }
+  }
+  return undefined;
 }
 
 function formatDuration(start: Date | null, end: Date | null) {

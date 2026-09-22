@@ -6,22 +6,29 @@ import {
   getProjectDetail,
   getWorkflowState,
   listProjects,
-  runNextStep,
   WorkflowError,
 } from "@repo/workflow";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { sampleRequirements } from "../fixtures/artifacts";
 import { FakeProvider, sampleTeamProvider } from "../fixtures/fake-provider";
+import { runNextStepNow, testQueue } from "../fixtures/workflow";
 
-// Requires a migrated Postgres (`npm run db:up && npm run db:migrate`).
+// Requires Postgres; tests use an isolated database (see vitest.config.ts).
 const url = process.env.DATABASE_URL;
 
 describe.skipIf(!url)("workflow service", () => {
   let db: Db;
+  // A fresh queue per test, so a job one test leaves behind is never
+  // processed by another.
+  let queue: string;
 
   beforeAll(() => {
     db = createDb(url!);
+  });
+
+  beforeEach(() => {
+    queue = testQueue();
   });
 
   afterAll(async () => {
@@ -37,7 +44,7 @@ describe.skipIf(!url)("workflow service", () => {
     const provider = sampleTeamProvider();
 
     // PM drafts version 1.
-    const first = await runNextStep(db, provider, proj.id);
+    const first = await runNextStepNow(db, provider, proj.id, queue);
     expect((await getWorkflowState(db, proj.id)).next).toEqual({
       type: "review",
       versionId: first.version.id,
@@ -48,7 +55,7 @@ describe.skipIf(!url)("workflow service", () => {
       decision: "rejected",
       feedback: "Cut scope to dinners only",
     });
-    const second = await runNextStep(db, provider, proj.id);
+    const second = await runNextStepNow(db, provider, proj.id, queue);
     expect(second.version.version).toBe(2);
     expect(provider.requests[1]?.prompt).toContain("Cut scope to dinners only");
 
@@ -63,7 +70,7 @@ describe.skipIf(!url)("workflow service", () => {
 
     // Designer drafts the spec from the approved requirements; approving it
     // completes the workflow.
-    const design = await runNextStep(db, provider, proj.id);
+    const design = await runNextStepNow(db, provider, proj.id, queue);
     expect(design.run.role).toBe("designer");
     expect(provider.requests[2]?.prompt).toContain("<approved_requirements>");
     await decideVersion(db, design.version.id, { decision: "approved" });
@@ -93,12 +100,12 @@ describe.skipIf(!url)("workflow service", () => {
   it("deletes a project with runs and revisions", async () => {
     const proj = await newProject();
     const provider = new FakeProvider(() => sampleRequirements);
-    const first = await runNextStep(db, provider, proj.id);
+    const first = await runNextStepNow(db, provider, proj.id, queue);
     await decideVersion(db, first.version.id, {
       decision: "rejected",
       feedback: "Revise",
     });
-    await runNextStep(db, provider, proj.id);
+    await runNextStepNow(db, provider, proj.id, queue);
 
     await db.delete(project).where(eq(project.id, proj.id));
 
@@ -111,10 +118,11 @@ describe.skipIf(!url)("workflow service", () => {
 
   it("requires feedback to reject", async () => {
     const proj = await newProject();
-    const { version } = await runNextStep(
+    const { version } = await runNextStepNow(
       db,
       new FakeProvider(() => sampleRequirements),
       proj.id,
+      queue,
     );
 
     await expect(
@@ -124,10 +132,11 @@ describe.skipIf(!url)("workflow service", () => {
 
   it("refuses to decide a version twice", async () => {
     const proj = await newProject();
-    const { version } = await runNextStep(
+    const { version } = await runNextStepNow(
       db,
       new FakeProvider(() => sampleRequirements),
       proj.id,
+      queue,
     );
     await decideVersion(db, version.id, { decision: "approved" });
 
@@ -139,9 +148,11 @@ describe.skipIf(!url)("workflow service", () => {
   it("refuses to run while a version awaits review", async () => {
     const proj = await newProject();
     const provider = new FakeProvider(() => sampleRequirements);
-    await runNextStep(db, provider, proj.id);
+    await runNextStepNow(db, provider, proj.id, queue);
 
-    await expect(runNextStep(db, provider, proj.id)).rejects.toMatchObject({
+    await expect(
+      runNextStepNow(db, provider, proj.id, queue),
+    ).rejects.toMatchObject({
       code: "conflict",
     });
     expect(provider.requests).toHaveLength(1);

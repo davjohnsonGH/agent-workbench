@@ -13,16 +13,19 @@ import { roleLabels } from "./labels";
 export function NextActionPanel({
   projectId,
   next,
+  activeRun,
 }: {
   projectId: string;
   next: NextAction;
+  /** The queued or running agent, if any. */
+  activeRun?: { role: AgentRole; status: "queued" | "running" };
 }) {
   const router = useRouter();
 
-  // Another tab or request may be running an agent: refresh until it finishes.
+  // The worker runs agents in the background: poll until the run finishes.
   useEffect(() => {
     if (next.type !== "wait") return;
-    const timer = setInterval(() => router.refresh(), 5000);
+    const timer = setInterval(() => router.refresh(), 2000);
     return () => clearInterval(timer);
   }, [next.type, router]);
 
@@ -40,9 +43,15 @@ export function NextActionPanel({
     case "wait":
       return (
         <section className="card">
-          <h2>Waiting</h2>
+          <h2>
+            {activeRun
+              ? `${roleLabels[activeRun.role]} ${activeRun.status === "queued" ? "queued" : "working"}…`
+              : "Waiting"}
+          </h2>
           <p className="muted">
-            An agent is running. This page refreshes automatically.
+            {activeRun?.status === "queued"
+              ? "Waiting for a worker to pick up the run. If this doesn't change, check that the worker is running (npm run dev starts it)."
+              : "The agent is running in the background. This page updates automatically."}
           </p>
         </section>
       );
@@ -66,35 +75,23 @@ function RunPanel({
   revision?: { versionId: string; feedback: string };
 }) {
   const router = useRouter();
-  const [startedAt, setStartedAt] = useState<number | null>(null);
-  const [elapsed, setElapsed] = useState(0);
+  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (startedAt === null) return;
-    const timer = setInterval(
-      () => setElapsed(Math.floor((Date.now() - startedAt) / 1000)),
-      1000,
-    );
-    return () => clearInterval(timer);
-  }, [startedAt]);
-
   async function run() {
-    setStartedAt(Date.now());
-    setElapsed(0);
+    setPending(true);
     setError(null);
     try {
       await postJson(`/api/projects/${projectId}/run`);
+      router.refresh();
     } catch (e) {
       setError((e as Error).message);
     } finally {
-      setStartedAt(null);
-      router.refresh();
+      setPending(false);
     }
   }
 
   const label = roleLabels[role];
-  const running = startedAt !== null;
 
   return (
     <section className="card">
@@ -106,12 +103,12 @@ function RunPanel({
         </p>
       )}
       <div className="row">
-        <button className="primary" onClick={run} disabled={running}>
-          {running ? `Running… ${elapsed}s` : revision ? "Revise" : "Run agent"}
+        <button className="primary" onClick={run} disabled={pending}>
+          {pending ? "Queueing…" : revision ? "Revise" : "Run agent"}
         </button>
-        {running && (
-          <span className="muted">Agent runs usually take about a minute.</span>
-        )}
+        <span className="muted">
+          Runs take about a minute in the background.
+        </span>
         {error && <span className="error">{error}</span>}
       </div>
     </section>

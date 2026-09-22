@@ -13,10 +13,12 @@ import {
   artifactVersion,
   artifactVersionInput,
   type Db,
+  type DbOrTx,
   modelCall,
   project,
 } from "@repo/db";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
+import { z } from "zod";
 
 import { type AgentInputs, buildAgentRequest } from "./definition";
 import {
@@ -32,11 +34,19 @@ export interface AgentRunParams {
   role: AgentRole;
   /** Revise an existing version of the agent's artifact using reviewer feedback. */
   revision?: { versionId: string; feedback: string };
-  idempotencyKey?: string;
 }
 
 export type AgentRunRow = typeof agentRun.$inferSelect;
 export type ArtifactVersionRow = typeof artifactVersion.$inferSelect;
+export interface AgentRunResult {
+  run: AgentRunRow;
+  version: ArtifactVersionRow;
+}
+
+const runInputSchema = z.object({
+  revisionOf: z.string().nullable(),
+  feedback: z.string().nullable(),
+});
 
 interface LoadedVersion {
   id: string;
@@ -44,24 +54,63 @@ interface LoadedVersion {
 }
 
 /**
- * Run an agent for a project and store its output as a new version of its
- * artifact, awaiting approval. The agent receives the latest approved version
- * of each input artifact; the new version records those inputs (and the
- * version it revises) as lineage. The run is recorded in `agent_run` whether
- * it succeeds or fails; on failure the error is rethrown.
+ * Create a queued run. Fails with a unique violation on
+ * `agent_run_one_active_per_role` if the role already has an active run.
+ */
+export async function createAgentRun(
+  db: DbOrTx,
+  params: AgentRunParams,
+): Promise<AgentRunRow> {
+  const [run] = await db
+    .insert(agentRun)
+    .values({
+      projectId: params.projectId,
+      role: params.role,
+      status: "queued",
+      input: {
+        revisionOf: params.revision?.versionId ?? null,
+        feedback: params.revision?.feedback ?? null,
+      },
+      traceId: randomUUID(),
+    })
+    .returning();
+  if (!run) throw new Error("Failed to create agent run");
+  return run;
+}
+
+/**
+ * Execute a queued run: give the agent the latest approved version of each
+ * input artifact, call the model, and store the output as a new version of the
+ * agent's artifact awaiting approval, with lineage to its inputs and to the
+ * version it revises. Every model call is traced in `model_call`.
+ *
+ * Idempotent: executing a run that already succeeded returns its result
+ * without calling the model (e.g. when a worker crashed after committing).
+ * On failure the error is recorded on the run, which stays `running`, and
+ * rethrown; the caller decides whether to retry (`requeueAgentRun`) or give
+ * up (`failAgentRun`).
  */
 export async function executeAgentRun(
   db: Db,
   provider: ModelProvider,
-  params: AgentRunParams,
-): Promise<{ run: AgentRunRow; version: ArtifactVersionRow }> {
-  const agent = agents[params.role];
+  runId: string,
+): Promise<AgentRunResult> {
+  const [existing] = await db
+    .select()
+    .from(agentRun)
+    .where(eq(agentRun.id, runId));
+  if (!existing) throw new Error(`Run ${runId} not found`);
+  if (existing.status === "succeeded") return loadResult(db, existing);
+  if (existing.status === "failed") throw new Error(`Run ${runId} has failed`);
+
+  const agent = agents[existing.role];
+  const input = runInputSchema.parse(existing.input);
 
   const [proj] = await db
     .select()
     .from(project)
-    .where(eq(project.id, params.projectId));
-  if (!proj) throw new Error(`Project ${params.projectId} not found`);
+    .where(eq(project.id, existing.projectId));
+  if (!proj) throw new Error(`Project ${existing.projectId} not found`);
 
   const inputs: AgentInputs = {};
   const inputVersions: LoadedVersion[] = [];
@@ -70,40 +119,33 @@ export async function executeAgentRun(
     Object.assign(inputs, { [type]: loaded.content });
     inputVersions.push(loaded);
   }
-
-  const previous = params.revision
-    ? await loadVersion(db, params.revision.versionId, agent.produces)
+  const previous = input.revisionOf
+    ? await loadVersion(db, input.revisionOf, agent.produces)
     : undefined;
 
   const [run] = await db
-    .insert(agentRun)
-    .values({
-      projectId: proj.id,
-      role: agent.role,
+    .update(agentRun)
+    .set({
       status: "running",
-      input: {
-        inputVersionIds: inputVersions.map((v) => v.id),
-        revisionOf: params.revision?.versionId ?? null,
-        feedback: params.revision?.feedback ?? null,
-      },
       model: provider.model,
-      traceId: randomUUID(),
-      idempotencyKey: params.idempotencyKey,
-      startedAt: new Date(),
+      input: { ...input, inputVersionIds: inputVersions.map((v) => v.id) },
+      startedAt: sql`coalesce(${agentRun.startedAt}, now())`,
+      error: null,
     })
+    .where(eq(agentRun.id, runId))
     .returning();
-  if (!run) throw new Error("Failed to create agent run");
+  if (!run) throw new Error(`Run ${runId} not found`);
 
   const request = buildAgentRequest(agent, {
     idea: proj.idea,
     inputs,
     revision:
-      params.revision && previous
-        ? { previous: previous.content, feedback: params.revision.feedback }
+      previous && input.feedback !== null
+        ? { previous: previous.content, feedback: input.feedback }
         : undefined,
   });
   const call = {
-    runId: run.id,
+    runId,
     model: provider.model,
     system: request.system,
     prompt: request.prompt,
@@ -124,13 +166,12 @@ export async function executeAgentRun(
       error instanceof ModelRefusalError || error instanceof ModelOutputError
         ? error.usage
         : undefined;
-    const message = error instanceof Error ? error.message : String(error);
     await db.transaction(async (tx) => {
       await tx.insert(modelCall).values({
         ...call,
         servedModel: result?.model,
         output: result?.output,
-        error: message,
+        error: errorMessage(error),
         requestId: requestIdOf(error),
         inputTokens: usage?.inputTokens,
         outputTokens: usage?.outputTokens,
@@ -138,14 +179,8 @@ export async function executeAgentRun(
       });
       await tx
         .update(agentRun)
-        .set({
-          status: "failed",
-          error: message,
-          inputTokens: usage?.inputTokens,
-          outputTokens: usage?.outputTokens,
-          finishedAt: new Date(),
-        })
-        .where(eq(agentRun.id, run.id));
+        .set({ error: errorMessage(error), ...(await tokenTotals(tx, runId)) })
+        .where(eq(agentRun.id, runId));
     });
     throw error;
   }
@@ -179,7 +214,7 @@ export async function executeAgentRun(
         status: "pending_approval",
         content: result.output,
         schemaVersion: artifactRegistry[agent.produces].schemaVersion,
-        producedByRunId: run.id,
+        producedByRunId: runId,
       })
       .returning();
     if (!version) throw new Error("Failed to create artifact version");
@@ -204,21 +239,91 @@ export async function executeAgentRun(
       latencyMs,
     });
 
+    // Marking the run succeeded in the same transaction as the version is
+    // what makes re-execution safe (see the idempotency check above).
     const [finished] = await tx
       .update(agentRun)
       .set({
         status: "succeeded",
         model: result.model,
-        inputTokens: result.usage.inputTokens,
-        outputTokens: result.usage.outputTokens,
+        error: null,
         finishedAt: new Date(),
+        ...(await tokenTotals(tx, runId)),
       })
-      .where(eq(agentRun.id, run.id))
+      .where(eq(agentRun.id, runId))
       .returning();
     if (!finished) throw new Error("Failed to update agent run");
 
     return { run: finished, version };
   });
+}
+
+/** Put a run back in the queue after a failed attempt that will be retried. */
+export async function requeueAgentRun(
+  db: DbOrTx,
+  runId: string,
+  error: unknown,
+): Promise<void> {
+  await db
+    .update(agentRun)
+    .set({ status: "queued", error: errorMessage(error) })
+    .where(and(eq(agentRun.id, runId), eq(agentRun.status, "running")));
+}
+
+/** Mark a run permanently failed. Idempotent; never overwrites a success. */
+export async function failAgentRun(
+  db: DbOrTx,
+  runId: string,
+  error: unknown,
+): Promise<void> {
+  await db
+    .update(agentRun)
+    .set({
+      status: "failed",
+      error: errorMessage(error),
+      finishedAt: sql`coalesce(${agentRun.finishedAt}, now())`,
+      ...(await tokenTotals(db, runId)),
+    })
+    .where(and(eq(agentRun.id, runId), sql`${agentRun.status} <> 'succeeded'`));
+}
+
+/**
+ * Create and execute a run in-process, without the queue (scripts and tests).
+ * A failure marks the run failed and is rethrown.
+ */
+export async function runAgent(
+  db: Db,
+  provider: ModelProvider,
+  params: AgentRunParams,
+): Promise<AgentRunResult> {
+  const run = await createAgentRun(db, params);
+  try {
+    return await executeAgentRun(db, provider, run.id);
+  } catch (error) {
+    await failAgentRun(db, run.id, error);
+    throw error;
+  }
+}
+
+/** A run's token usage summed over all its model calls. */
+async function tokenTotals(db: DbOrTx, runId: string) {
+  const [totals] = await db
+    .select({
+      inputTokens: sql<number>`coalesce(sum(${modelCall.inputTokens}), 0)::int`,
+      outputTokens: sql<number>`coalesce(sum(${modelCall.outputTokens}), 0)::int`,
+    })
+    .from(modelCall)
+    .where(eq(modelCall.runId, runId));
+  return totals ?? { inputTokens: 0, outputTokens: 0 };
+}
+
+async function loadResult(db: Db, run: AgentRunRow): Promise<AgentRunResult> {
+  const [version] = await db
+    .select()
+    .from(artifactVersion)
+    .where(eq(artifactVersion.producedByRunId, run.id));
+  if (!version) throw new Error(`Run ${run.id} succeeded without a version`);
+  return { run, version };
 }
 
 /** The latest approved version of an artifact type in a project. */
@@ -259,6 +364,10 @@ async function loadVersion(
     throw new Error(`Artifact version ${versionId} is not a valid ${type}`);
   }
   return { id: row.id, content: parsed.data };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /** Provider request id from a model error or an SDK API error, if any. */

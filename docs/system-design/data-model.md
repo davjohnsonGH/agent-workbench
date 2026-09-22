@@ -108,3 +108,5 @@ create table approval_decision (
 
 - `model_call`: one row per model request in a run, with prompts, output, and
   cost (ADR-0004).
+- `job`: background job queue for agent runs (ADR-0005). `agent_run` has a
+  partial unique index allowing one `queued`/`running` run per project and role.

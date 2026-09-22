@@ -1,6 +1,5 @@
 import "server-only";
 
-import { AnthropicProvider, type ModelProvider } from "@repo/agents";
 import { createDb, type Db } from "@repo/db";
 import { WorkflowError } from "@repo/workflow";
 import { z } from "zod";
@@ -15,13 +14,6 @@ export function getDb(): Db {
     globalForServer.db = createDb(url);
   }
   return globalForServer.db;
-}
-
-export function getProvider(): ModelProvider {
-  return new AnthropicProvider({
-    model: process.env.AGENT_MODEL,
-    workspaceId: process.env.ANTHROPIC_WORKSPACE_ID,
-  });
 }
 
 const statusByCode = {
