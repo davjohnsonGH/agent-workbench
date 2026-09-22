@@ -18,5 +18,5 @@
       "persistent": true
     }
   },
-  "globalEnv": ["DATABASE_URL"]
+  "globalEnv": ["DATABASE_URL", "AGENT_MODEL", "ANTHROPIC_WORKSPACE_ID"]
 }

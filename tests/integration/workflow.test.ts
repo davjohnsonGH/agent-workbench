@@ -1,0 +1,125 @@
+import { createDb, type Db } from "@repo/db";
+import {
+  createProject,
+  decideVersion,
+  getProjectDetail,
+  getWorkflowState,
+  runNextStep,
+  WorkflowError,
+} from "@repo/workflow";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { sampleRequirements } from "../fixtures/artifacts";
+import { FakeProvider } from "../fixtures/fake-provider";
+
+// Requires a migrated Postgres (`npm run db:up && npm run db:migrate`).
+const url = process.env.DATABASE_URL;
+
+describe.skipIf(!url)("workflow service", () => {
+  let db: Db;
+
+  beforeAll(() => {
+    db = createDb(url!);
+  });
+
+  afterAll(async () => {
+    await db.$client.end();
+  });
+
+  function newProject() {
+    return createProject(db, { name: "Meal planner", idea: "Plan dinners" });
+  }
+
+  it("runs the PM, loops on rejection, then unblocks the designer", async () => {
+    const proj = await newProject();
+    const provider = new FakeProvider(() => sampleRequirements);
+
+    // PM drafts version 1.
+    const first = await runNextStep(db, provider, proj.id);
+    expect((await getWorkflowState(db, proj.id)).next).toEqual({
+      type: "review",
+      versionId: first.version.id,
+    });
+
+    // Reviewer rejects; the next run revises with that feedback.
+    await decideVersion(db, first.version.id, {
+      decision: "rejected",
+      feedback: "Cut scope to dinners only",
+    });
+    const second = await runNextStep(db, provider, proj.id);
+    expect(second.version.version).toBe(2);
+    expect(provider.requests[1]?.prompt).toContain("Cut scope to dinners only");
+
+    // Reviewer approves version 2; the designer is next.
+    await decideVersion(db, second.version.id, { decision: "approved" });
+    const state = await getWorkflowState(db, proj.id);
+    expect(state.steps[0]?.state).toEqual({
+      status: "approved",
+      versionId: second.version.id,
+    });
+    expect(state.next).toEqual({ type: "run", role: "designer" });
+
+    // The designer agent does not exist yet.
+    await expect(runNextStep(db, provider, proj.id)).rejects.toMatchObject({
+      code: "not_implemented",
+    });
+
+    const detail = await getProjectDetail(db, proj.id);
+    expect(detail.versions.map((v) => [v.version, v.status])).toEqual([
+      [2, "approved"],
+      [1, "rejected"],
+    ]);
+    expect(detail.versions[1]?.decisions[0]?.feedback).toBe(
+      "Cut scope to dinners only",
+    );
+    expect(detail.runs).toHaveLength(2);
+  });
+
+  it("requires feedback to reject", async () => {
+    const proj = await newProject();
+    const { version } = await runNextStep(
+      db,
+      new FakeProvider(() => sampleRequirements),
+      proj.id,
+    );
+
+    await expect(
+      decideVersion(db, version.id, { decision: "rejected", feedback: "  " }),
+    ).rejects.toMatchObject({ code: "invalid" });
+  });
+
+  it("refuses to decide a version twice", async () => {
+    const proj = await newProject();
+    const { version } = await runNextStep(
+      db,
+      new FakeProvider(() => sampleRequirements),
+      proj.id,
+    );
+    await decideVersion(db, version.id, { decision: "approved" });
+
+    await expect(
+      decideVersion(db, version.id, { decision: "approved" }),
+    ).rejects.toMatchObject({ code: "conflict" });
+  });
+
+  it("refuses to run while a version awaits review", async () => {
+    const proj = await newProject();
+    const provider = new FakeProvider(() => sampleRequirements);
+    await runNextStep(db, provider, proj.id);
+
+    await expect(runNextStep(db, provider, proj.id)).rejects.toMatchObject({
+      code: "conflict",
+    });
+    expect(provider.requests).toHaveLength(1);
+  });
+
+  it("reports unknown projects and versions as not found", async () => {
+    const missing = "00000000-0000-0000-0000-000000000000";
+    await expect(getWorkflowState(db, missing)).rejects.toBeInstanceOf(
+      WorkflowError,
+    );
+    await expect(
+      decideVersion(db, missing, { decision: "approved" }),
+    ).rejects.toMatchObject({ code: "not_found" });
+  });
+});
