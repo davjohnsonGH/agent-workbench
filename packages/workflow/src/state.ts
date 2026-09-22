@@ -1,20 +1,24 @@
+import { agents } from "@repo/agents";
 import type { ArtifactType } from "@repo/artifacts";
 import type { AgentRole, ArtifactVersionStatus } from "@repo/db";
 
 /**
  * The V1 workflow (ADR-0001): a fixed sequence of agent steps. A step can run
- * once every artifact it requires has an approved version.
+ * once every artifact its agent takes as input has an approved version.
  */
 export interface WorkflowStep {
   role: AgentRole;
   produces: ArtifactType;
-  requires: ArtifactType[];
+  requires: readonly ArtifactType[];
 }
 
-export const workflowSteps: WorkflowStep[] = [
-  { role: "pm", produces: "requirements", requires: [] },
-  { role: "designer", produces: "design_spec", requires: ["requirements"] },
-];
+const sequence: AgentRole[] = ["pm", "designer"];
+
+export const workflowSteps: WorkflowStep[] = sequence.map((role) => ({
+  role,
+  produces: agents[role].produces,
+  requires: agents[role].inputs,
+}));
 
 /** What the state computation needs to know about a project. */
 export interface ProjectSnapshot {

@@ -8,7 +8,7 @@
  * .env. Set AGENT_MODEL to override the default model, and
  * ANTHROPIC_WORKSPACE_ID if the API key is not scoped to a workspace.
  */
-import { AnthropicProvider, executePmRun } from "@repo/agents";
+import { AnthropicProvider, executeAgentRun } from "@repo/agents";
 import { createDb, project } from "@repo/db";
 
 try {
@@ -42,8 +42,9 @@ try {
     `Project ${proj!.id}: running PM agent on ${provider.model}...`,
   );
 
-  const { run, version } = await executePmRun(db, provider, {
+  const { run, version } = await executeAgentRun(db, provider, {
     projectId: proj!.id,
+    role: "pm",
   });
   const seconds = (run.finishedAt!.getTime() - run.startedAt!.getTime()) / 1000;
   console.error(

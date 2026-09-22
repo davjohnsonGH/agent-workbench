@@ -28,7 +28,6 @@ const statusByCode = {
   invalid: 400,
   not_found: 404,
   conflict: 409,
-  not_implemented: 501,
 } as const;
 
 /** Run a route handler body, mapping known errors to JSON error responses. */

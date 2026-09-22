@@ -8,6 +8,7 @@ import {
   roleLabels,
   StatusBadge,
 } from "@/features/projects/labels";
+import { DesignSpecView } from "@/features/projects/design-spec-view";
 import { NextActionPanel } from "@/features/projects/next-action-panel";
 import { RequirementsView } from "@/features/projects/requirements-view";
 import { getDb, parseId } from "@/lib/server";
@@ -93,11 +94,6 @@ function ArtifactCard({
   versions: Detail["versions"];
   selected: Detail["versions"][number];
 }) {
-  const parsed =
-    selected.type === "requirements"
-      ? parseArtifactContent("requirements", selected.content)
-      : null;
-
   return (
     <section className="card">
       <div className="row">
@@ -135,14 +131,27 @@ function ArtifactCard({
         </p>
       ))}
 
-      {parsed?.success ? (
-        <RequirementsView doc={parsed.data} />
-      ) : (
-        <pre className="table-wrap">
-          {JSON.stringify(selected.content, null, 2)}
-        </pre>
-      )}
+      <ArtifactContent version={selected} />
     </section>
+  );
+}
+
+function ArtifactContent({ version }: { version: Detail["versions"][number] }) {
+  switch (version.type) {
+    case "requirements": {
+      const parsed = parseArtifactContent("requirements", version.content);
+      if (parsed.success) return <RequirementsView doc={parsed.data} />;
+      break;
+    }
+    case "design_spec": {
+      const parsed = parseArtifactContent("design_spec", version.content);
+      if (parsed.success) return <DesignSpecView doc={parsed.data} />;
+      break;
+    }
+  }
+  // Content that no longer matches the current schema: show it raw.
+  return (
+    <pre className="table-wrap">{JSON.stringify(version.content, null, 2)}</pre>
   );
 }
 

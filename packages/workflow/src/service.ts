@@ -1,4 +1,4 @@
-import { executePmRun, type ModelProvider } from "@repo/agents";
+import { executeAgentRun, type ModelProvider } from "@repo/agents";
 import type { ArtifactType } from "@repo/artifacts";
 import {
   type AgentRole,
@@ -23,7 +23,7 @@ const STALE_RUN_MS = 10 * 60 * 1000;
 
 export class WorkflowError extends Error {
   constructor(
-    readonly code: "not_found" | "conflict" | "invalid" | "not_implemented",
+    readonly code: "not_found" | "conflict" | "invalid",
     message: string,
   ) {
     super(message);
@@ -185,18 +185,11 @@ export async function runNextStep(
     );
   }
 
-  switch (next.role) {
-    case "pm":
-      return executePmRun(db, provider, {
-        projectId,
-        revision: next.revision,
-      });
-    case "designer":
-      throw new WorkflowError(
-        "not_implemented",
-        "The designer agent is not implemented yet",
-      );
-  }
+  return executeAgentRun(db, provider, {
+    projectId,
+    role: next.role,
+    revision: next.revision,
+  });
 }
 
 async function loadSnapshot(

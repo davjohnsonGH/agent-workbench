@@ -3,7 +3,10 @@ import type {
   StructuredRequest,
   StructuredResponse,
 } from "@repo/agents";
+import { designSpecSchema } from "@repo/artifacts";
 import type { z } from "zod";
+
+import { sampleDesignSpec, sampleRequirements } from "./artifacts";
 
 /**
  * A ModelProvider that returns canned output (validated against the request
@@ -30,4 +33,13 @@ export class FakeProvider implements ModelProvider {
       usage: { inputTokens: 100, outputTokens: 200 },
     };
   }
+}
+
+/** Responds with the sample artifact matching each request's schema. */
+export function sampleTeamProvider(overrides: { designSpec?: unknown } = {}) {
+  return new FakeProvider((request) =>
+    request.schema === designSpecSchema
+      ? (overrides.designSpec ?? sampleDesignSpec)
+      : sampleRequirements,
+  );
 }

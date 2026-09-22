@@ -12,7 +12,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { sampleRequirements } from "../fixtures/artifacts";
-import { FakeProvider } from "../fixtures/fake-provider";
+import { FakeProvider, sampleTeamProvider } from "../fixtures/fake-provider";
 
 // Requires a migrated Postgres (`npm run db:up && npm run db:migrate`).
 const url = process.env.DATABASE_URL;
@@ -32,9 +32,9 @@ describe.skipIf(!url)("workflow service", () => {
     return createProject(db, { name: "Meal planner", idea: "Plan dinners" });
   }
 
-  it("runs the PM, loops on rejection, then unblocks the designer", async () => {
+  it("runs PM then designer to completion, looping on rejection", async () => {
     const proj = await newProject();
-    const provider = new FakeProvider(() => sampleRequirements);
+    const provider = sampleTeamProvider();
 
     // PM drafts version 1.
     const first = await runNextStep(db, provider, proj.id);
@@ -61,20 +61,26 @@ describe.skipIf(!url)("workflow service", () => {
     });
     expect(state.next).toEqual({ type: "run", role: "designer" });
 
-    // The designer agent does not exist yet.
-    await expect(runNextStep(db, provider, proj.id)).rejects.toMatchObject({
-      code: "not_implemented",
+    // Designer drafts the spec from the approved requirements; approving it
+    // completes the workflow.
+    const design = await runNextStep(db, provider, proj.id);
+    expect(design.run.role).toBe("designer");
+    expect(provider.requests[2]?.prompt).toContain("<approved_requirements>");
+    await decideVersion(db, design.version.id, { decision: "approved" });
+    expect((await getWorkflowState(db, proj.id)).next).toEqual({
+      type: "complete",
     });
 
     const detail = await getProjectDetail(db, proj.id);
-    expect(detail.versions.map((v) => [v.version, v.status])).toEqual([
-      [2, "approved"],
-      [1, "rejected"],
+    expect(detail.versions.map((v) => [v.type, v.version, v.status])).toEqual([
+      ["design_spec", 1, "approved"],
+      ["requirements", 2, "approved"],
+      ["requirements", 1, "rejected"],
     ]);
-    expect(detail.versions[1]?.decisions[0]?.feedback).toBe(
+    expect(detail.versions[2]?.decisions[0]?.feedback).toBe(
       "Cut scope to dinners only",
     );
-    expect(detail.runs).toHaveLength(2);
+    expect(detail.runs).toHaveLength(3);
   });
 
   it("lists projects newest first", async () => {
